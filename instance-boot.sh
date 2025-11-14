@@ -74,5 +74,43 @@ else
   echo "[*] uv already installed."
 fi
 
+########################################
+# 5. Install Node.js (NVM + Node 25)
+########################################
+echo "[*] Installing NVM + Node.js v25..."
+
+# Install NVM
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash || {
+  echo "[!] NVM installation failed."
+}
+
+# Load NVM without restarting shell
+if [[ -s "$HOME/.nvm/nvm.sh" ]]; then
+  . "$HOME/.nvm/nvm.sh"
+fi
+
+# Install Node 25 using NVM
+if command -v nvm >/dev/null 2>&1; then
+  nvm install 25 || echo "[!] Failed to install Node.js v25"
+else
+  echo "[!] NVM not loaded. Node.js installation skipped."
+fi
+
+########################################
+# 6. Install Codex CLI
+########################################
+if command -v npm >/dev/null 2>&1; then
+  echo "[*] Installing OpenAI Codex CLI..."
+  npm install -g @openai/codex || echo "[!] Failed to install Codex CLI."
+else
+  echo "[!] npm not found. Skipping Codex CLI."
+fi
+
+########################################
+# 7. Install Cursor CLI
+########################################
+echo "[*] Installing Cursor CLI..."
+curl https://cursor.com/install -fsS | bash || echo "[!] Failed to install Cursor CLI."
+
 echo "[*] Bootstrap completed."
 echo "[*] If you just copied your SSH key, you may need to restart your terminal."
