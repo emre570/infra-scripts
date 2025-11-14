@@ -74,6 +74,16 @@ else
   echo "[*] uv already installed."
 fi
 
+echo "[*] Sourcing uv environment..."
+
+if ! grep -q 'source "$HOME/.local/bin/env"' "$HOME/.bashrc" 2>/dev/null; then
+  echo 'source "$HOME/.local/bin/env"' >> "$HOME/.bashrc"
+fi
+
+if ! grep -q 'source "$HOME/.local/bin/env"' "$HOME/.zshrc" 2>/dev/null; then
+  echo 'source "$HOME/.local/bin/env"' >> "$HOME/.zshrc"
+fi
+
 ########################################
 # 5. Install Node.js (NVM + Node 25)
 ########################################
@@ -96,6 +106,16 @@ else
   echo "[!] NVM not loaded. Node.js installation skipped."
 fi
 
+echo "[*] Setting NVM_DIR..."
+
+if ! grep -q 'export NVM_DIR="$HOME/.nvm"' "$HOME/.bashrc" 2>/dev/null; then
+  echo 'export NVM_DIR="$HOME/.nvm"' >> "$HOME/.bashrc"
+fi
+
+if ! grep -q 'export NVM_DIR="$HOME/.nvm"' "$HOME/.zshrc" 2>/dev/null; then
+  echo 'export NVM_DIR="$HOME/.nvm"' >> "$HOME/.zshrc"
+fi
+
 ########################################
 # 6. Install Codex CLI
 ########################################
@@ -111,6 +131,16 @@ fi
 ########################################
 echo "[*] Installing Cursor CLI..."
 curl https://cursor.com/install -fsS | bash || echo "[!] Failed to install Cursor CLI."
+
+echo "[*] Adding ~/.local/bin to PATH..."
+
+if ! grep -q 'export PATH="$HOME/.local/bin:$PATH"' "$HOME/.bashrc" 2>/dev/null; then
+  echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.bashrc"
+fi
+
+if ! grep -q 'export PATH="$HOME/.local/bin:$PATH"' "$HOME/.zshrc" 2>/dev/null; then
+  echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.zshrc"
+fi
 
 echo "[*] Bootstrap completed."
 echo "[*] If you just copied your SSH key, you may need to restart your terminal."
