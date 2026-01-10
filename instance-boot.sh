@@ -1,146 +1,229 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "[*] RentGPU minimal bootstrap starting..."
+echo "[*] Infra bootstrap starting..."
 
 ########################################
-# 0. Detect sudo availability
+# Utils
 ########################################
-if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
-  echo "[*] Running as root. sudo not required."
-  SUDO=""
-elif command -v sudo >/dev/null 2>&1; then
-  echo "[*] sudo detected. Using sudo."
-  SUDO="sudo"
-else
-  echo "[!] Not root and no sudo available."
-  echo "    System package installation may not work."
-  SUDO=""
-fi
-
-########################################
-# 1. System update & upgrade
-########################################
-if command -v apt-get >/dev/null 2>&1; then
-  echo "[*] Updating system packages..."
-  $SUDO apt-get update -y || true
-  $SUDO apt-get upgrade -y || true
-else
-  echo "[!] apt-get not found. Skipping package installation."
-fi
-
-########################################
-# 2. Install nvtop and curl (if possible)
-########################################
-if command -v apt-get >/dev/null 2>&1; then
-  echo "[*] Installing nvtop and curl..."
-  $SUDO apt-get install -y nvtop curl || echo "[!] Failed to install nvtop (not critical)."
-else
-  echo "[!] apt-get missing. Skipping nvtop installation."
-fi
-
-########################################
-# 3. SSH environment preparation
-########################################
-echo "[*] Setting up ~/.ssh directory..."
-mkdir -p ~/.ssh
-chmod 700 ~/.ssh
-
-# Add GitHub to known_hosts (prevents yes/no prompt)
-if ! grep -q "github.com" ~/.ssh/known_hosts 2>/dev/null; then
-  echo "[*] Adding github.com to known_hosts..."
-  ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null || true
-fi
-chmod 644 ~/.ssh/known_hosts || true
-
-# Check if the master SSH key exists
-if [[ ! -f "$HOME/.ssh/id_ed25519" ]]; then
-  echo ""
-  echo "[!] No SSH master key found."
-  echo "    You must copy your master key from your Mac:"
-  echo "    scp ~/.ssh/rentgpu_master ~/.ssh/rentgpu_master.pub root@IP:~/.ssh/"
-  echo ""
-else
-  echo "[*] SSH key found. GitHub authentication should work."
-fi
-
-########################################
-# 4. Install uv
-########################################
-if ! command -v uv >/dev/null 2>&1; then
-  echo "[*] Installing uv..."
-  curl -LsSf https://astral.sh/uv/install.sh | sh || echo "[!] uv installation failed."
-else
-  echo "[*] uv already installed."
-fi
-
-echo "[*] Sourcing uv environment..."
-
-if ! grep -q 'source "$HOME/.local/bin/env"' "$HOME/.bashrc" 2>/dev/null; then
-  echo 'source "$HOME/.local/bin/env"' >> "$HOME/.bashrc"
-fi
-
-if ! grep -q 'source "$HOME/.local/bin/env"' "$HOME/.zshrc" 2>/dev/null; then
-  echo 'source "$HOME/.local/bin/env"' >> "$HOME/.zshrc"
-fi
-
-########################################
-# 5. Install Node.js (NVM + Node 25)
-########################################
-echo "[*] Installing NVM + Node.js v25..."
-
-# Install NVM
-curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash || {
-  echo "[!] NVM installation failed."
+is_installed() {
+  command -v "$1" >/dev/null 2>&1
 }
 
-# Load NVM without restarting shell
-if [[ -s "$HOME/.nvm/nvm.sh" ]]; then
-  . "$HOME/.nvm/nvm.sh"
-fi
-
-# Install Node 25 using NVM
-if command -v nvm >/dev/null 2>&1; then
-  nvm install 25 || echo "[!] Failed to install Node.js v25"
+########################################
+# Detect sudo
+########################################
+if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
+  SUDO=""
+elif command -v sudo >/dev/null 2>&1; then
+  SUDO="sudo"
 else
-  echo "[!] NVM not loaded. Node.js installation skipped."
-fi
-
-echo "[*] Setting NVM_DIR..."
-
-if ! grep -q 'export NVM_DIR="$HOME/.nvm"' "$HOME/.bashrc" 2>/dev/null; then
-  echo 'export NVM_DIR="$HOME/.nvm"' >> "$HOME/.bashrc"
-fi
-
-if ! grep -q 'export NVM_DIR="$HOME/.nvm"' "$HOME/.zshrc" 2>/dev/null; then
-  echo 'export NVM_DIR="$HOME/.nvm"' >> "$HOME/.zshrc"
+  SUDO=""
 fi
 
 ########################################
-# 6. Install Codex CLI
+# Detect active shell + rc file
 ########################################
-if command -v npm >/dev/null 2>&1; then
-  echo "[*] Installing OpenAI Codex CLI..."
-  npm install -g @openai/codex || echo "[!] Failed to install Codex CLI."
+if [[ -n "${ZSH_VERSION:-}" ]]; then
+  ACTIVE_SHELL="zsh"
+  RC_FILE="$HOME/.zshrc"
+elif [[ -n "${BASH_VERSION:-}" ]]; then
+  ACTIVE_SHELL="bash"
+  RC_FILE="$HOME/.bashrc"
 else
-  echo "[!] npm not found. Skipping Codex CLI."
+  ACTIVE_SHELL="unknown"
+  RC_FILE=""
 fi
+
+echo "[*] Active shell: $ACTIVE_SHELL"
+[[ -n "$RC_FILE" ]] && echo "[*] RC file: $RC_FILE"
 
 ########################################
-# 7. Install Cursor CLI
+# Helpers
 ########################################
-echo "[*] Installing Cursor CLI..."
-curl https://cursor.com/install -fsS | bash || echo "[!] Failed to install Cursor CLI."
+ensure_local_bin_path() {
+  [[ -z "$RC_FILE" ]] && return
+  grep -q 'export PATH="$HOME/.local/bin:$PATH"' "$RC_FILE" 2>/dev/null \
+    || echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$RC_FILE"
+}
 
-echo "[*] Adding ~/.local/bin to PATH..."
+ensure_nvm_init() {
+  [[ -z "$RC_FILE" ]] && return
 
-if ! grep -q 'export PATH="$HOME/.local/bin:$PATH"' "$HOME/.bashrc" 2>/dev/null; then
-  echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.bashrc"
+  grep -q 'export NVM_DIR="$HOME/.nvm"' "$RC_FILE" 2>/dev/null \
+    || echo 'export NVM_DIR="$HOME/.nvm"' >> "$RC_FILE"
+
+  grep -q 'nvm.sh' "$RC_FILE" 2>/dev/null || cat >> "$RC_FILE" <<'EOF'
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
+EOF
+}
+
+########################################
+# tmux config
+########################################
+TMUX_CONF_CONTENT='
+set -g mouse on
+
+set -g status-bg black
+set -g status-fg white
+
+set -g status-left "#[fg=green]#S #[fg=white]|"
+set -g status-right "#[fg=yellow]%Y-%m-%d #[fg=cyan]%H:%M #[fg=white]| #[fg=magenta]#(whoami)"
+
+set -g window-status-current-style "bg=blue,fg=white"
+set -g window-status-style "bg=black,fg=white"
+
+set -g pane-active-border-style "fg=green"
+set -g pane-border-style "fg=grey"
+'
+
+########################################
+# Components
+########################################
+COMPONENTS=(
+  "system:System Update & Upgrade"
+  "nvtop:nvtop GPU Monitor"
+  "curl:curl"
+  "uv:uv (Astral)"
+  "node:Node.js (NVM + v25)"
+  "codex:OpenAI Codex CLI"
+  "cursor:Cursor CLI"
+  "claude:Claude Code CLI"
+  "tmux:tmux + custom config"
+)
+
+########################################
+# Status table
+########################################
+echo ""
+echo "Available components:"
+echo "---------------------"
+
+for c in "${COMPONENTS[@]}"; do
+  key="${c%%:*}"
+  label="${c#*:}"
+
+  case "$key" in
+    system) status="always available" ;;
+    nvtop)  is_installed nvtop  && status="installed" || status="not installed" ;;
+    curl)   is_installed curl   && status="installed" || status="not installed" ;;
+    uv)     is_installed uv     && status="installed" || status="not installed" ;;
+    node)   is_installed node   && status="installed" || status="not installed" ;;
+    codex)  is_installed codex  && status="installed" || status="not installed" ;;
+    cursor) is_installed cursor && status="installed" || status="not installed" ;;
+    claude) is_installed claude && status="installed" || status="not installed" ;;
+    tmux)   is_installed tmux   && status="installed" || status="not installed" ;;
+  esac
+
+  printf " - %-30s [%s]\n" "$label" "$status"
+done
+
+########################################
+# Selection menu
+########################################
+echo ""
+echo "Select components to install (space separated numbers):"
+echo ""
+
+i=1
+for c in "${COMPONENTS[@]}"; do
+  echo "  $i) ${c#*:}"
+  ((i++))
+done
+
+echo ""
+read -rp "Your choice: " -a SELECTED
+
+########################################
+# Install functions
+########################################
+install_system() {
+  command -v apt-get >/dev/null 2>&1 || return
+  $SUDO apt-get update -y
+  $SUDO apt-get upgrade -y
+}
+
+install_nvtop() {
+  $SUDO apt-get install -y nvtop
+}
+
+install_curl() {
+  $SUDO apt-get install -y curl
+}
+
+install_uv() {
+  curl -LsSf https://astral.sh/uv/install.sh | sh
+  grep -q 'source "$HOME/.local/bin/env"' "$RC_FILE" 2>/dev/null \
+    || echo 'source "$HOME/.local/bin/env"' >> "$RC_FILE"
+}
+
+install_node() {
+  curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
+
+  export NVM_DIR="$HOME/.nvm"
+  [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+
+  nvm install 25
+  ensure_nvm_init
+}
+
+install_codex() {
+  npm install -g @openai/codex
+}
+
+install_cursor() {
+  curl https://cursor.com/install -fsS | bash
+  ensure_local_bin_path
+}
+
+install_claude() {
+  curl -fsSL https://claude.ai/install.sh | bash
+  ensure_local_bin_path
+}
+
+install_tmux() {
+  command -v tmux >/dev/null 2>&1 || $SUDO apt-get install -y tmux
+
+  if [[ -f "$HOME/.tmux.conf" ]]; then
+    cp "$HOME/.tmux.conf" "$HOME/.tmux.conf.bak.$(date +%Y%m%d_%H%M%S)"
+  fi
+
+  printf "%s\n" "$TMUX_CONF_CONTENT" > "$HOME/.tmux.conf"
+  tmux info >/dev/null 2>&1 && tmux source-file "$HOME/.tmux.conf"
+}
+
+########################################
+# Execute selections
+########################################
+echo ""
+echo "Starting installation..."
+echo ""
+
+for idx in "${SELECTED[@]}"; do
+  case "$idx" in
+    1) install_system ;;
+    2) install_nvtop ;;
+    3) install_curl ;;
+    4) install_uv ;;
+    5) install_node ;;
+    6) install_codex ;;
+    7) install_cursor ;;
+    8) install_claude ;;
+    9) install_tmux ;;
+    *) echo "[!] Unknown selection: $idx" ;;
+  esac
+done
+
+########################################
+# Reload shell
+########################################
+if [[ -n "$RC_FILE" ]]; then
+  echo ""
+  echo "[*] Reloading $ACTIVE_SHELL environment..."
+  # shellcheck source=/dev/null
+  source "$RC_FILE"
 fi
 
-if ! grep -q 'export PATH="$HOME/.local/bin:$PATH"' "$HOME/.zshrc" 2>/dev/null; then
-  echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.zshrc"
-fi
-
-echo "[*] Bootstrap completed."
-echo "[*] If you just copied your SSH key, you may need to restart your terminal."
+echo ""
+echo "[*] Infra bootstrap completed successfully."
