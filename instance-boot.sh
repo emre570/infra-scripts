@@ -156,6 +156,8 @@ install_uv() {
   curl -LsSf https://astral.sh/uv/install.sh | sh
   grep -q 'source "$HOME/.local/bin/env"' "$RC_FILE" 2>/dev/null \
     || echo 'source "$HOME/.local/bin/env"' >> "$RC_FILE"
+  # Also load for current script session
+  [ -s "$HOME/.local/bin/env" ] && source "$HOME/.local/bin/env"
 }
 
 install_node() {
@@ -175,11 +177,15 @@ install_codex() {
 install_cursor() {
   curl https://cursor.com/install -fsS | bash
   ensure_local_bin_path
+  # Also update PATH for current script session
+  export PATH="$HOME/.local/bin:$PATH"
 }
 
 install_claude() {
   curl -fsSL https://claude.ai/install.sh | bash
   ensure_local_bin_path
+  # Also update PATH for current script session
+  export PATH="$HOME/.local/bin:$PATH"
 }
 
 install_tmux() {
@@ -216,14 +222,57 @@ for idx in "${SELECTED[@]}"; do
 done
 
 ########################################
+# Verify installations
+########################################
+echo ""
+echo "[*] Infra bootstrap completed successfully."
+echo ""
+echo "Installation verification:"
+echo "--------------------------"
+for c in "${COMPONENTS[@]}"; do
+  key="${c%%:*}"
+  label="${c#*:}"
+
+  case "$key" in
+    system) continue ;;
+    nvtop)  cmd="nvtop" ;;
+    curl)   cmd="curl" ;;
+    uv)     cmd="uv" ;;
+    node)   cmd="node" ;;
+    codex)  cmd="codex" ;;
+    cursor) cmd="cursor" ;;
+    claude) cmd="claude" ;;
+    tmux)   cmd="tmux" ;;
+  esac
+
+  if command -v "$cmd" >/dev/null 2>&1; then
+    printf "  ✓ %-25s [ready]\n" "$label"
+  else
+    printf "  ✗ %-25s [needs shell reload]\n" "$label"
+  fi
+done
+echo ""
+
+########################################
 # Reload shell
 ########################################
 if [[ -n "$RC_FILE" ]]; then
+  echo "╔════════════════════════════════════════════════════════════╗"
+  echo "║  IMPORTANT: To use the newly installed tools, either:      ║"
+  echo "║                                                            ║"
+  echo "║  Option 1: Run this command now:                           ║"
+  echo "║     source ~/.bashrc                                       ║"
+  echo "║                                                            ║"
+  echo "║  Option 2: Start a fresh shell (recommended):              ║"
+  echo "║     exec bash -l                                           ║"
+  echo "║                                                            ║"
+  echo "╚════════════════════════════════════════════════════════════╝"
   echo ""
-  echo "[*] Reloading $ACTIVE_SHELL environment..."
-  # shellcheck source=/dev/null
-  source "$RC_FILE"
-fi
+  read -rp "Auto-reload shell now? [Y/n]: " RELOAD_CHOICE
+  RELOAD_CHOICE="${RELOAD_CHOICE:-Y}"
 
-echo ""
-echo "[*] Infra bootstrap completed successfully."
+  if [[ "$RELOAD_CHOICE" =~ ^[Yy]$ ]]; then
+    echo "[*] Reloading shell..."
+    exec bash -l
+  fi
+fi
