@@ -1,23 +1,41 @@
 # infra-scripts
 
-Minimal, selectable, and repeatable **instance bootstrap scripts**.
+Minimal, non-interactive, and repeatable **instance bootstrap script**.
 
-This repository exists to bring up a clean and reliable development
-environment on fresh machines such as GPU rental instances
-(RentGPU, RunPod, Vast, bare-metal servers, VMs) with **a single command**.
+Brings up a complete development environment on fresh machines
+(GPU rentals, bare-metal servers, VMs) with **a single command** — no prompts, no manual selection.
 
-The scripts are designed to:
-- detect the active shell (bash / zsh)
-- modify only the correct rc file
-- handle PATH, NVM, tmux, and common CLI tooling correctly
-- be safely re-run multiple times
+## What it installs
 
----
+| Component | Method |
+|-----------|--------|
+| System update & upgrade | apt |
+| curl | apt |
+| nvtop (GPU monitor) | apt |
+| tmux + custom config | apt |
+| uv (Astral) | installer script |
+| Node.js v25 (via nvm) | nvm |
+| OpenAI Codex CLI | npm |
+| Cursor CLI | installer script |
+| Claude Code CLI | installer script |
 
-## 🚀 Quick Start (One-liner)
+All components are installed in dependency order and skipped if already present.
 
-After logging into a new instance, run:
+## Quick start
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/emre570/infra-scripts/main/instance-boot.sh | bash
 ```
+
+After it finishes, reload your shell to pick up PATH changes:
+
+```bash
+exec bash -l
+```
+
+## Design
+
+- Detects active shell (bash / zsh) and modifies only the correct rc file
+- Handles PATH, NVM, and environment setup within the same session
+- Idempotent — safe to re-run; already-installed tools are skipped
+- Individual failures are caught and reported without aborting the rest
